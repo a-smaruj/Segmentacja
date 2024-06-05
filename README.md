@@ -1,1 +1,3 @@
-# segmentacja
+# Segmentacja
+
+*w trakcie realizacji*

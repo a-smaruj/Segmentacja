@@ -1,7 +1,7 @@
 # Imports
+import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
-
 from sklearn.preprocessing import StandardScaler
 
 
@@ -64,3 +64,15 @@ def used_feature(_tree, tree, feature_names):
 
     recurse(0, 1)
     return feature
+
+
+# Create dictionary based on code list
+def create_dictionary(df, category, exception=0):
+    start_row = df[df['Field'] == category].index[0] + 1
+    end_row = start_row
+    while end_row < len(df) and pd.isna(df.iloc[end_row, 0]):
+        end_row += 1
+    category_df = df.iloc[start_row - exception:end_row, 1:3].dropna()
+    category_df.columns = ['Question', 'Explanation']
+    category_dict = pd.Series(category_df['Explanation'].values, index=category_df['Question']).to_dict()
+    return category_dict

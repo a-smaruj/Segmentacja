@@ -1,5 +1,7 @@
 # Imports
 import pandas as pd
+import numpy as np
+import re
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
@@ -24,7 +26,7 @@ def find_best_clusters(df, maximum_K):
     plt.plot(k_values, clusters_centers, 'o-', color = 'orange')
     plt.xlabel("Ilość klastrów (K)")
     plt.ylabel("Inercja klastera")
-    plt.savefig('elbow_plot.png', transparent = True)
+    plt.savefig('results/plots/elbow_plot.png', transparent = True)
     plt.title("Elbow Plot dla k-średnich")
     plt.show()
 
@@ -66,6 +68,11 @@ def used_feature(_tree, tree, feature_names):
     return feature
 
 
+# Description of the category of code_list
+def descript(df, category):
+    return df[df['Field'] == category].iloc[0]['Question/Description']
+
+
 # Create dictionary based on code list
 def create_dictionary(df, category, exception=0):
     start_row = df[df['Field'] == category].index[0] + 1
@@ -76,3 +83,99 @@ def create_dictionary(df, category, exception=0):
     category_df.columns = ['Question', 'Explanation']
     category_dict = pd.Series(category_df['Explanation'].values, index=category_df['Question']).to_dict()
     return category_dict
+
+
+# Count mode of column
+def mode(x):
+    return pd.Series(x).value_counts().head(1).index[0]
+
+
+# Count mode and print result
+def mode_code(col_list, df_code, data_part, exe=False):
+    col_dict = {}
+    for col_name, num in col_list:
+        col_name_2 = col_name
+        if num != 0:
+            col_name_2 = col_name[:-1] + str(int(col_name[-1:]) + num)
+        elif exe:
+            col_name_2 = 'Q4WIFI'
+
+        col_dict.update({col_name + '_mode': mode(data_part[col_name])})
+        print(f'Mode of {descript(df_code, col_name)}: {create_dictionary(df_code, col_name_2, num)[col_dict[col_name + "_mode"]]}')
+    return col_dict
+
+
+# Count mean (weighted, without null values) and print result
+def mean_fun(col_list, df_code, data_part, columns_null, columns_0):
+    col_dict = {}
+    for col_name in col_list:
+        if col_name in columns_null:
+            indices = ~np.isnan(data_part[col_name])
+            result = round(np.average(data_part[col_name][indices], weights=data_part["WEIGHT"][indices]), 2)
+        elif col_name in columns_0:
+            indices = data_part[data_part[col_name] != 0].index
+            result = round(np.average(data_part[col_name][indices], weights=data_part["WEIGHT"][indices]), 2)
+        else:
+            result = round(np.average(data_part[col_name], weights=data_part["WEIGHT"]), 2)
+        print(f'Mean {descript(df_code, col_name)}: {result}')
+        col_dict.update({col_name + '_mean': result})
+    return col_dict
+
+
+# Function to automate cluster analysis
+def cluster_analysis(data_year, df_code, segment_name, cluster_num, columns_null, columns_0):
+    data_part = data_year.loc[data_year[segment_name] == cluster_num]
+    report = {}
+
+    print('--- Cluster raport ---\n')
+    report.update({'Size': len(data_part)})
+    print('Size of the cluster:', len(data_part))
+
+    print('\n- Survey -')
+    report.update(mode_code([('DAY', 0), ('METH', 0), ('SAQ', 0), ('LANG', 0)], df_code, data_part))
+
+    print('\n- Flight -')
+    report.update(mode_code([('STRATA', 0), ('PEAK', 0), ('AIRLINE_CODE', 0), ('DESTGEO', 0), ('DESTMARK', 0), ('Q2PURP1', 2), ('Q13COUNTY', 0)], df_code, data_part))
+    report.update(mean_fun(['HOWLONG'], df_code, data_part, columns_null, columns_0))
+
+    print('\n- Transport -')
+    report.update(mode_code([('Q3GETTO1', 2), ('Q3PARK', 0)], df_code, data_part))
+
+    print('\n- Airports -')
+    report.update(mode_code([('Q5TIMESFLOWN', 0), ('Q5FIRSTTIME', 0), ('Q6LONGUSE', 0), ('Q19Clear', 0), ('Q23FLY', 0), ('Q24SJC', 0), ('Q24OAK', 0)], df_code, data_part))
+
+    print('\n- Use of services -')
+    q4_names = list(filter(re.compile(r'Q4\w*').fullmatch, data_part.columns.to_list()))
+    report.update(mode_code([(name, 0) for name in q4_names], df_code, data_part, True))
+    report.update(mode_code([('Q11TSAPRE', 0), ('Q15PROBLEM', 0)], df_code, data_part))
+
+    print('\n- Rating -')
+    q7_names = list(filter(re.compile(r'Q7\w*').fullmatch, data_part.columns.to_list()))
+    q7_rating = [round(np.average(data_part[q7], weights=data_part['WEIGHT']), 2) for q7 in q7_names]
+    print(f'Mean list of {descript(df_code, "Q7ALL")}: {q7_rating}')
+    print(f'Mean of {descript(df_code, "Q7ALL")}: {round(np.average(q7_rating), 2)}')
+    report.update({"Q7_list_mean": q7_rating, "Q7_mean": round(np.average(q7_rating), 2)})
+
+    q9_names = list(filter(re.compile(r'Q9\w*').fullmatch, data_part.columns.to_list()))
+    q9_rating = [round(np.average(data_part[q9], weights=data_part['WEIGHT']), 2) for q9 in q9_names]
+    print(f'Mean list of {descript(df_code, "Q9All")}: {q9_rating}')
+    print(f'Mean of {descript(df_code, "Q9All")}: {round(np.average(q9_rating), 2)}')
+    report.update({"Q9_list_mean": q9_rating, "Q9_mean": round(np.average(q9_rating), 2)})
+
+    print(f'Mean of {descript(df_code, "Q10SAFE")}: {round(np.average(data_part["Q10Safe"], weights=data_part["WEIGHT"]), 2)}')
+    print(f'Mode of {descript(df_code, "Q10SAFE")}: {mode(data_part["Q10Safe"])}')
+    report.update({"Q10SAFE_mean": round(np.average(data_part["Q10Safe"], weights=data_part["WEIGHT"]), 2), "Q10SAFE_mode": mode(data_part["Q10Safe"])})
+    report.update(mean_fun(['Q12PRECHECKRATE', 'Q13GETRATE', 'Q14FIND', 'Q14PASSTHRU', 'NETPRO'], df_code, data_part, columns_null, columns_0))
+
+    print('\n- Demographics -')
+    report.update(mode_code([('Q17LIVE', 0), ('Q20Age', 0), ('Q21Gender', 0), ('Q22Income', 0)], df_code, data_part))
+    report.update(mean_fun(['Q20Age', 'Q22Income'], df_code, data_part, columns_null, columns_0))
+
+    print('\n- Comments -')
+    for col in ['Q8-1', 'Q9-1', 'Q10-1', 'Q12-1', 'Q15-1']:
+        top_3 = data_part[data_part[col] != 0].groupby([col]).size().sort_values(ascending=False).index[0:3].to_list()
+        report.update({col + '_com': top_3})
+        print(f'{descript(df_code, col)}: {top_3}')
+
+    report_df = pd.DataFrame(report.items(), columns=['Variable', 'Value'])
+    return report_df
